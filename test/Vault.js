@@ -98,11 +98,11 @@ describe("Vault", () => {
     describe("Withdraw", () => {
         it("Validation", async() => {
             await expect(
-                vault.connect(user1).withdraw(ethers.parseEther("0"), true)
+                vault.connect(user1).withdraw(ethers.parseEther("0"))
             ).to.be.revertedWith("Invalid amount");
 
             await expect(
-                vault.connect(user1).withdraw(ethers.parseEther("1000"), true)
+                vault.connect(user1).withdraw(ethers.parseEther("1000"))
             ).to.be.revertedWith("Exceeded amount");
         });
 
@@ -110,7 +110,7 @@ describe("Vault", () => {
             const amount = ethers.parseEther("50");
     
             await expect(
-                vault.connect(user1).withdraw(amount, true)
+                vault.connect(user1).withdraw(amount)
             ).to.emit(vault, "Withdraw").withArgs(user1Addr, pid, amount);
     
             expect(await vault.balanceOf(user1Addr)).to.equal(amount);
@@ -122,7 +122,7 @@ describe("Vault", () => {
             const amount = ethers.parseEther("100");
     
             await expect(
-                vault.connect(user2).withdraw(amount, true)
+                vault.connect(user2).withdraw(amount)
             ).to.emit(vault, "Withdraw").withArgs(user2Addr, pid, amount);
     
             expect(await vault.balanceOf(user2Addr)).to.equal(amount);

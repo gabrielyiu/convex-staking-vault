@@ -49,8 +49,7 @@ contract Vault is Ownable {
         rewardContract = _rewardContract;
     }
 
-    function updateRewardIndex(address _rewardToken, uint reward) public {
-        require(totalSupply > 0, "No staked");
+    function updateRewardIndex(address _rewardToken, uint reward) internal {
         rewardIndex[_rewardToken] += (reward * MULTIPLIER) / totalSupply;
     }
 
@@ -71,13 +70,17 @@ contract Vault is Ownable {
     function deposit(uint _amount) external {
         require(_amount > 0, "Invalid amount");
 
-        _updateRewards(msg.sender, CRV);
-        _updateRewards(msg.sender, CVX);
+        if (totalSupply > 0) {
+            getConvexRewards();
+
+            _updateRewards(msg.sender, CRV);
+            _updateRewards(msg.sender, CVX);
+        }
+
+        IERC20(lptoken).safeTransferFrom(msg.sender, address(this), _amount);
 
         balanceOf[msg.sender] += _amount;
         totalSupply += _amount;
-
-        IERC20(lptoken).safeTransferFrom(msg.sender, address(this), _amount);
 
         IERC20(lptoken).approve(BOOSTER, _amount);
         IBooster(BOOSTER).deposit(pid, _amount, true);
@@ -85,56 +88,60 @@ contract Vault is Ownable {
         emit Deposit(msg.sender, pid, _amount);
     }
 
-    function withdraw(uint _amount, bool _claim) external {
+    function withdraw(uint _amount) external {
         require(_amount > 0, "Invalid amount");
         require(balanceOf[msg.sender] >= _amount, "Exceeded amount");
 
-        _updateRewards(msg.sender, CRV);
-        _updateRewards(msg.sender, CVX);
+        claimRewards(msg.sender);
+        IBaseRewardPool(rewardContract).withdrawAndUnwrap(_amount, false);
         
-        IBaseRewardPool(rewardContract).withdrawAndUnwrap(_amount, _claim);
-
-        if (_claim) {
-            _claimReward();
-        }
-
         balanceOf[msg.sender] -= _amount;
         totalSupply -= _amount;
-
         IERC20(lptoken).safeTransfer(msg.sender, _amount);
 
         emit Withdraw(msg.sender, pid, _amount);
     }
 
-    function claimReward() external {
-        IBaseRewardPool(rewardContract).getReward();
-        _claimReward();
-    }
+    function claimRewards(address _account) public {
+        getConvexRewards();
 
-    function _claimReward() internal {
-        _updateRewards(msg.sender, CRV);
-        _updateRewards(msg.sender, CVX);
+        _updateRewards(_account, CRV);
+        _updateRewards(_account, CVX);
 
-        uint crvBal = IERC20(CRV).balanceOf(address(this));
-        uint cvxBal = IERC20(CVX).balanceOf(address(this));
-
-        updateRewardIndex(CRV, crvBal);
-        updateRewardIndex(CVX, cvxBal);
-
-        uint crvReward = earned[msg.sender][CRV];
-        uint cvxReward = earned[msg.sender][CVX];
+        uint crvReward = earned[_account][CRV];
+        uint cvxReward = earned[_account][CVX];
 
         if (crvReward > 0) {
-            earned[msg.sender][CRV] = 0;
-            IERC20(CRV).transfer(msg.sender, crvReward);
+            earned[_account][CRV] = 0;
+            IERC20(CRV).transfer(_account, crvReward);
         }
 
         if (cvxReward > 0) {
-            earned[msg.sender][CVX] = 0;
-            IERC20(CVX).transfer(msg.sender, cvxReward);
+            earned[_account][CVX] = 0;
+            IERC20(CVX).transfer(_account, cvxReward);
         }
 
-        emit Claim(msg.sender, crvReward, cvxReward);
+        emit Claim(_account, crvReward, cvxReward);
+    }
+    
+    function getConvexRewards() public {
+        require(totalSupply > 0, "No stake");
+
+        uint256 crvBalBefore = IERC20(CRV).balanceOf(address(this));
+        uint256 cvxBalBefore = IERC20(CVX).balanceOf(address(this));
+
+        IBaseRewardPool(rewardContract).getReward();
+
+        uint256 crvBalAfter = IERC20(CRV).balanceOf(address(this));
+        uint256 cvxBalAfter = IERC20(CVX).balanceOf(address(this));
+
+        if (crvBalAfter > crvBalBefore) {
+            updateRewardIndex(CRV, crvBalAfter - crvBalBefore);
+        }
+
+        if (cvxBalAfter > cvxBalBefore) {
+            updateRewardIndex(CVX, cvxBalAfter - cvxBalBefore);
+        }
     }
 
     function pendingRewards(
