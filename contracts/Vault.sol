@@ -7,7 +7,7 @@ import '@openzeppelin/contracts/access/Ownable.sol';
 
 import './interfaces/IBooster.sol';
 import './interfaces/IBaseRewardPool.sol';
-
+import 'hardhat/console.sol';
 contract Vault is Ownable {
 
     using SafeERC20 for IERC20;
@@ -56,10 +56,6 @@ contract Vault is Ownable {
     function _calculateRewards(address _account, address _rewardToken) private view returns (uint) {
         uint shares = balanceOf[_account];
         return (shares * (rewardIndex[_rewardToken] - rewardIndexOf[_account][_rewardToken])) / MULTIPLIER;
-    }
-
-    function calculateRewardsEarned(address account, address _rewardToken) public view returns (uint) {
-        return earned[account][_rewardToken] + _calculateRewards(account, _rewardToken);
     }
 
     function _updateRewards(address _account, address _rewardToken) internal {
