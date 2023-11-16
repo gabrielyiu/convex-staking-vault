@@ -7,7 +7,8 @@ import '@openzeppelin/contracts/access/Ownable.sol';
 
 import './interfaces/IBooster.sol';
 import './interfaces/IBaseRewardPool.sol';
-import 'hardhat/console.sol';
+import './interfaces/ICVX.sol';
+
 contract Vault is Ownable {
 
     using SafeERC20 for IERC20;
@@ -20,9 +21,6 @@ contract Vault is Ownable {
     address public constant CVX = 0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B;
     address public constant BOOSTER = 0xF403C135812408BFbE8713b5A23a04b3D48AAE31;
     uint private constant MULTIPLIER = 1e18;
-
-    uint256 public constant maxSupply = 100 * 1000000 * 1e18; // 100mil
-    uint256 public constant totalCliffs = 1000;
 
     uint public immutable pid;
     address public immutable lptoken;
@@ -41,12 +39,12 @@ contract Vault is Ownable {
     constructor(uint _pid) Ownable(msg.sender) {
         pid = _pid;
 
-        (address _lptoken, , , address _rewardContract, , bool _shutdown) = IBooster(BOOSTER).poolInfo(_pid);
+        (address _lptoken, , , address _crvRewards, , bool _shutdown) = IBooster(BOOSTER).poolInfo(_pid);
         require(_lptoken != address(0), "Invalid pid");
         require(!_shutdown, "shutdown");
 
         lptoken = _lptoken;
-        rewardContract = _rewardContract;
+        rewardContract = _crvRewards;
     }
 
     function updateRewardIndex(address _rewardToken, uint reward) internal {
@@ -58,16 +56,24 @@ contract Vault is Ownable {
         return (shares * (rewardIndex[_rewardToken] - rewardIndexOf[_account][_rewardToken])) / MULTIPLIER;
     }
 
+    function calculateRewardsEarned(address _account, address _rewardToken) public view returns (uint) {
+        return earned[_account][_rewardToken] + _calculateRewards(_account, _rewardToken);
+    }
+
     function _updateRewards(address _account, address _rewardToken) internal {
-        earned[_account][_rewardToken] += _calculateRewards(_account, _rewardToken);
-        rewardIndexOf[_account][_rewardToken] = rewardIndex[_rewardToken];
+        unchecked {
+            if (rewardIndex[_rewardToken] > rewardIndexOf[_account][_rewardToken]) {
+                earned[_account][_rewardToken] += _calculateRewards(_account, _rewardToken);
+                rewardIndexOf[_account][_rewardToken] = rewardIndex[_rewardToken];
+            }
+        }
     }
 
     function deposit(uint _amount) external {
         require(_amount > 0, "Invalid amount");
 
         if (totalSupply > 0) {
-            getConvexRewards();
+            _getConvexRewards();
 
             _updateRewards(msg.sender, CRV);
             _updateRewards(msg.sender, CVX);
@@ -88,80 +94,85 @@ contract Vault is Ownable {
         require(_amount > 0, "Invalid amount");
         require(balanceOf[msg.sender] >= _amount, "Exceeded amount");
 
-        claimRewards(msg.sender);
+        claimRewards();
         IBaseRewardPool(rewardContract).withdrawAndUnwrap(_amount, false);
         
         balanceOf[msg.sender] -= _amount;
         totalSupply -= _amount;
+        
         IERC20(lptoken).safeTransfer(msg.sender, _amount);
 
         emit Withdraw(msg.sender, pid, _amount);
     }
 
-    function claimRewards(address _account) public {
-        getConvexRewards();
+    function claimRewards() public {
+        _getConvexRewards();
 
-        _updateRewards(_account, CRV);
-        _updateRewards(_account, CVX);
+        _updateRewards(msg.sender, CRV);
+        _updateRewards(msg.sender, CVX);
 
-        uint crvReward = earned[_account][CRV];
-        uint cvxReward = earned[_account][CVX];
+        uint crvReward = calculateRewardsEarned(msg.sender, CRV);
+        uint cvxReward = calculateRewardsEarned(msg.sender, CVX);
 
         if (crvReward > 0) {
-            earned[_account][CRV] = 0;
-            IERC20(CRV).transfer(_account, crvReward);
+            earned[msg.sender][CRV] = 0;
+            IERC20(CRV).transfer(msg.sender, crvReward);
         }
 
         if (cvxReward > 0) {
-            earned[_account][CVX] = 0;
-            IERC20(CVX).transfer(_account, cvxReward);
+            earned[msg.sender][CVX] = 0;
+            IERC20(CVX).transfer(msg.sender, cvxReward);
         }
 
-        emit Claim(_account, crvReward, cvxReward);
-    }
-    
-    function getConvexRewards() public {
-        require(totalSupply > 0, "No stake");
-
-        uint256 crvBalBefore = IERC20(CRV).balanceOf(address(this));
-        uint256 cvxBalBefore = IERC20(CVX).balanceOf(address(this));
-
-        IBaseRewardPool(rewardContract).getReward();
-
-        uint256 crvBalAfter = IERC20(CRV).balanceOf(address(this));
-        uint256 cvxBalAfter = IERC20(CVX).balanceOf(address(this));
-
-        if (crvBalAfter > crvBalBefore) {
-            updateRewardIndex(CRV, crvBalAfter - crvBalBefore);
-        }
-
-        if (cvxBalAfter > cvxBalBefore) {
-            updateRewardIndex(CVX, cvxBalAfter - cvxBalBefore);
-        }
+        emit Claim(msg.sender, crvReward, cvxReward);
     }
 
     function pendingRewards(
         address _user
     ) external view returns (uint crvRewards, uint cvxRewards) {
-        require(totalSupply > 0, "No staked");
+        if (totalSupply == 0) return (0, 0);
 
         uint totalCrvRewards = IBaseRewardPool(rewardContract).earned(address(this));
         uint crvRewardIndex = rewardIndex[CRV] + (totalCrvRewards * MULTIPLIER) / totalSupply;
 
-        uint totalCVXRewards = calculateCvxReward(totalCrvRewards);
+        uint totalCVXRewards = _calculateCvxReward(totalCrvRewards);
         uint cvxRewardIndex = rewardIndex[CVX] + (totalCVXRewards * MULTIPLIER) / totalSupply;
+
         crvRewards = (balanceOf[_user] * (crvRewardIndex - rewardIndexOf[_user][CRV])) / MULTIPLIER;
         cvxRewards = (balanceOf[_user] * (cvxRewardIndex - rewardIndexOf[_user][CVX])) / MULTIPLIER;
         crvRewards += earned[_user][CRV];
         cvxRewards += earned[_user][CVX];
     }
 
-    function calculateCvxReward(uint _crvRewards) internal view returns (uint cvxRewards){
-        uint reductionPerCliff = maxSupply / totalCliffs;
-        uint256 supply = IERC20(CVX).totalSupply();
+    function _getConvexRewards() internal {
+        if (totalSupply == 0) return;
+
+        uint256 crvBalBefore = IERC20(CRV).balanceOf(address(this));
+        uint256 cvxBalBefore = IERC20(CVX).balanceOf(address(this));
+
+        IBaseRewardPool(rewardContract).getReward();
+
+        uint256 crvBalDelta = IERC20(CRV).balanceOf(address(this)) - crvBalBefore;
+        uint256 cvxBalDelta = IERC20(CVX).balanceOf(address(this)) - cvxBalBefore;
+
+        if (crvBalDelta > 0) {
+            updateRewardIndex(CRV, crvBalDelta);
+        }
+
+        if (cvxBalDelta > 0) {
+            updateRewardIndex(CVX, cvxBalDelta);
+        }
+    }
+
+    function _calculateCvxReward(uint _crvRewards) internal view returns (uint cvxRewards){
+        uint256 supply = ICVX(CVX).totalSupply();
         if(supply == 0){
             cvxRewards = _crvRewards;
         }
+        uint256 reductionPerCliff = ICVX(CVX).reductionPerCliff();
+        uint256 totalCliffs = ICVX(CVX).totalCliffs();
+        uint256 maxSupply = ICVX(CVX).maxSupply();
+
         uint256 cliff = supply / reductionPerCliff;
         if (cliff < totalCliffs) {
             // for reduction% take inverse of current cliff
