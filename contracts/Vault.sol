@@ -449,9 +449,9 @@ contract Vault is Ownable {
         } else {
             bytes memory path = abi.encodePacked(
                 _tokenIn,
-                uint24(_feeTier),
+                _feeTier,
                 WETH,
-                uint24(_feeTier),
+                _feeTier,
                 _tokenOut
             );
 

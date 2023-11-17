@@ -6,7 +6,8 @@ describe("Vault", () => {
     const curveSwapAddr = "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7";
     // underlying tokens
     const DAIAddr = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
-
+    const USDTAddr = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+    
     // Accounts
     const user1Addr = "0xb838c8A085D71F560698D1D5d60Aa46509735cd6";
     const user2Addr = "0x3C5348c8981f2d9759f4219a6F14c87274675AB8";
@@ -104,17 +105,17 @@ describe("Vault", () => {
         });
     })
 
-    /* describe("Claim rewards", () => {
-        // Todo
+    describe("Claim rewards", () => {
         it("Get pending rewards 10 hours later", async() => {
             await time.increase(TEN_HOURS);
 
             const [crvRewards1, cvxRewards1] = await vault.pendingRewards(user1Addr);
-            const [crvRewards2, cvxRewards2] = await vault.pendingRewards(user2Addr);
-
-            console.log(crvRewards1.toString(), cvxRewards1.toString());
+            
+            await expect(
+                vault.connect(user1).claimRewards()
+            ).to.emit(vault, "Claim")
         });
-    }); */
+    });
 
     describe("Withdraw", () => {
         it("Validation", async() => {
