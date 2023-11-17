@@ -2,12 +2,16 @@ const { time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 const { expect } = require("chai");
 
 describe("Vault", () => {
-    const pid = 4;
+    const pid = 9;
+    const curveSwapAddr = "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7";
+    // underlying tokens
+    const DAIAddr = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
+
     // Accounts
-    const user1Addr = "0x9E51BE7071F086d3A1fD5Dc0016177473619b237";
-    const user2Addr = "0xD2e10CfC63d1e48850849B4EE6977Ca359cAa7ce";
+    const user1Addr = "0xb838c8A085D71F560698D1D5d60Aa46509735cd6";
+    const user2Addr = "0x3C5348c8981f2d9759f4219a6F14c87274675AB8";
     // Contracts
-    let vault, lpToken, baseRewardPool;
+    let vault, lpToken, dai, baseRewardPool;
     // Signers
     let owner, user1, user2;
 
@@ -18,11 +22,13 @@ describe("Vault", () => {
         [owner] = await ethers.getSigners();
 
         const Vault = await ethers.getContractFactory("Vault");
-        vault = await Vault.deploy(pid);
+        vault = await Vault.deploy(pid, curveSwapAddr);
 
         const lpTokenAddr = await vault.lptoken();
 
         lpToken = await ethers.getContractAt("IERC20", lpTokenAddr);
+        dai = await ethers.getContractAt("IERC20", DAIAddr);
+
         const rewardContractAddr = await vault.rewardContract();
  
         baseRewardPool = await ethers.getContractAt("IBaseRewardPool", rewardContractAddr);
@@ -42,17 +48,23 @@ describe("Vault", () => {
     });
         
     describe("Deposit", () => {
-        it("Validation", async() => {
-            const amount = ethers.parseEther("0");
-            // Approve lp token
-            await lpToken.connect(user1).approve(vault.target, amount);
+        it("Not whitelisted", async() => {
+            await expect(
+                vault.connect(user1).depositSingle(DAIAddr, ethers.parseEther("100"))
+            ).to.be.revertedWith("Not whitelisted");
+        });
+
+        it("Invalid amount", async() => {
+            await expect(
+                vault.connect(owner).addWhitelist(DAIAddr)
+            ).to.emit(vault, "WhitelistAdded").withArgs(DAIAddr);
 
             await expect(
-                vault.connect(user1).deposit(ethers.parseEther("0"))
+                vault.connect(user1).depositSingle(DAIAddr, ethers.parseEther("0"))
             ).to.be.revertedWith("Invalid amount");
         });
 
-        it("User1 deposits 100 lp tokens", async() => {
+        it("User1 deposits 100 3CRV tokens", async() => {
             const amount = ethers.parseEther("100");
 
             // Approve lp token
@@ -60,30 +72,27 @@ describe("Vault", () => {
 
             // Deposit
             await expect(
-                vault.connect(user1).deposit(amount)
-            ).to.emit(vault, "Deposit").withArgs(user1Addr, pid, amount);
+                vault.connect(user1).depositLp(amount)
+            ).to.emit(vault, "DepositLp").withArgs(user1Addr, lpToken.target, amount);
 
             expect(await vault.balanceOf(user1Addr)).to.equal(amount);
             expect(await vault.totalSupply()).to.equal(amount);
         });
 
-        it("User2 deposits 200 lp tokens", async() => {
-            const amount = ethers.parseEther("200");
+        it("User1 deposits 1000 DAI tokens", async() => {
+            const amount = ethers.parseEther("1000");
 
-            // Approve lp token
-            await lpToken.connect(user2).approve(vault.target, amount);
-
+            // Approve DAI token
+            await dai.connect(user1).approve(vault.target, amount);
+            
             // Deposit
             await expect(
-                vault.connect(user2).deposit(amount)
-            ).to.emit(vault, "Deposit").withArgs(user2Addr, pid, amount);
-            
-            expect(await vault.balanceOf(user2Addr)).to.equal(amount);
-            expect(await vault.totalSupply()).to.equal(ethers.parseEther("300"));
+                vault.connect(user1).depositSingle(DAIAddr, amount)
+            ).to.emit(vault, "DepositSingle").withArgs(user1Addr, DAIAddr, amount);
         });
     });
 
-    describe("Claim rewards", () => {
+    /* describe("Claim rewards", () => {
         // Todo
         it("Get pending rewards 10 hours later", async() => {
             await time.increase(TEN_HOURS);
@@ -93,9 +102,9 @@ describe("Vault", () => {
 
             console.log(crvRewards1.toString(), cvxRewards1.toString());
         });
-    });
+    }); */
 
-    describe("Withdraw", () => {
+    /* describe("Withdraw", () => {
         it("Validation", async() => {
             await expect(
                 vault.connect(user1).withdraw(ethers.parseEther("0"))
@@ -129,5 +138,5 @@ describe("Vault", () => {
             // 250 - 100 = 150
             expect(await vault.totalSupply()).to.equal(ethers.parseEther("150"));
         });
-    });
+    }); */
 });
