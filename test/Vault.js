@@ -88,9 +88,21 @@ describe("Vault", () => {
             // Deposit
             await expect(
                 vault.connect(user1).depositSingle(DAIAddr, amount)
-            ).to.emit(vault, "DepositSingle").withArgs(user1Addr, DAIAddr, amount);
+            ).to.emit(vault, "DepositSingle")
+            .withArgs(user1Addr, DAIAddr, amount);
         });
-    });
+
+        it("User1 deposits 1 ETH", async() => {
+            const amount = ethers.parseEther("1");
+
+            await expect(
+                vault.connect(user1).depositETH({ 
+                    value: amount
+                })
+            ).to.emit(vault, "DepositSingle")
+            .withArgs(user1Addr, ethers.ZeroAddress, amount);
+        });
+    })
 
     /* describe("Claim rewards", () => {
         // Todo
@@ -104,39 +116,33 @@ describe("Vault", () => {
         });
     }); */
 
-    /* describe("Withdraw", () => {
+    describe("Withdraw", () => {
         it("Validation", async() => {
             await expect(
-                vault.connect(user1).withdraw(ethers.parseEther("0"))
+                vault.connect(user1).withdrawLp(ethers.parseEther("0"))
             ).to.be.revertedWith("Invalid amount");
 
             await expect(
-                vault.connect(user1).withdraw(ethers.parseEther("1000"))
+                vault.connect(user1).withdrawLp(ethers.parseEther("3000"))
             ).to.be.revertedWith("Exceeded amount");
         });
 
-        it("User1 withdraws 50 lp tokens", async() => {
-            const amount = ethers.parseEther("50");
-    
-            await expect(
-                vault.connect(user1).withdraw(amount)
-            ).to.emit(vault, "Withdraw").withArgs(user1Addr, pid, amount);
-    
-            expect(await vault.balanceOf(user1Addr)).to.equal(amount);
-            // 300 - 50 = 250
-            expect(await vault.totalSupply()).to.equal(ethers.parseEther("250"));
-        });
-    
-        it("User2 withdraws 100 lp tokens", async() => {
+        it("User1 withdraws 100 lp tokens", async() => {
             const amount = ethers.parseEther("100");
     
             await expect(
-                vault.connect(user2).withdraw(amount)
-            ).to.emit(vault, "Withdraw").withArgs(user2Addr, pid, amount);
-    
-            expect(await vault.balanceOf(user2Addr)).to.equal(amount);
-            // 250 - 100 = 150
-            expect(await vault.totalSupply()).to.equal(ethers.parseEther("150"));
+                vault.connect(user1).withdrawLp(amount)
+            ).to.emit(vault, "WithdrawLp")
+            .withArgs(user1Addr, lpToken.target, amount);
         });
-    }); */
+    
+        /* it("User1 withdraws DAI tokens for 100 lp tokens", async() => {
+            const amount = ethers.parseEther("100");
+    
+            await expect(
+                vault.connect(user1).withdrawSingle(DAIAddr, amount)
+            ).to.emit(vault, "WithdrawSingle")
+            .withArgs(user1Addr, DAIAddr, amount);
+        }); */
+    });
 });

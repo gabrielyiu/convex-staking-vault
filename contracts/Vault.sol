@@ -228,6 +228,7 @@ contract Vault is Ownable {
             if (coin == _token) {
                 amount += balance;
             } else {
+                console.log(coin, _token, balance);
                 // swap into requested token
                 uint amountOut = _swapExactInputMultiHop(
                     coin,
